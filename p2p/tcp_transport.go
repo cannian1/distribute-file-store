@@ -3,7 +3,6 @@ package p2p
 import (
 	"fmt"
 	"net"
-	"sync"
 )
 
 // TCPPeer 代表一个 TCP 连接的远端节点
@@ -22,27 +21,39 @@ func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
 	}
 }
 
-type TCPTransport struct {
-	listenAddress string
-	listener      net.Listener
-	handshakeFunc HandshakeFunc
-	decoder       Decoder
+// Close 实现 TCPPeer 接口，关闭连接
+func (p *TCPPeer) Close() error {
+	return p.conn.Close()
+}
 
-	mu    sync.RWMutex // 把互斥锁放置在需要保护的字段上
-	peers map[net.Addr]Peer
+type TCPTransportOpts struct {
+	ListenAddr    string
+	HandshakeFunc HandshakeFunc
+	Decoder       Decoder
+	OnPeer        func(Peer) error
+}
+
+type TCPTransport struct {
+	TCPTransportOpts
+	listener net.Listener
+	rpcChan  chan RPC
 }
 
 // NewTCPTransport 创建一个新的 TCPTransport
-func NewTCPTransport(listenAddress string) *TCPTransport {
+func NewTCPTransport(Ops TCPTransportOpts) *TCPTransport {
 	return &TCPTransport{
-		handshakeFunc: NOPHandshakeFun,
-		listenAddress: listenAddress,
-		peers:         make(map[net.Addr]Peer),
+		TCPTransportOpts: Ops,
+		rpcChan:          make(chan RPC),
 	}
 }
 
+// Consume 实现 Transport 的接口，返回一个只读 channel 用于接收即将到来的网络上的对端的消息
+func (t *TCPTransport) Consume() <-chan RPC {
+	return t.rpcChan
+}
+
 func (t *TCPTransport) ListenAndAccept() (err error) {
-	t.listener, err = net.Listen("tcp", t.listenAddress)
+	t.listener, err = net.Listen("tcp", t.ListenAddr)
 	if err != nil {
 		return err
 	}
@@ -60,28 +71,44 @@ func (t *TCPTransport) startAcceptLoop() {
 			return
 		}
 
-		fmt.Printf("new incoming connection: %+v\n, peer addr is %s", conn)
+		fmt.Printf("new incoming connection: %+v\n", conn)
 		go t.handleConn(conn)
 	}
 }
 
-type Temp struct {
-}
-
 func (t *TCPTransport) handleConn(conn net.Conn) {
+	var err error
+
+	defer func() {
+		fmt.Printf("dropping peer connection :%v\n", err)
+		conn.Close()
+	}()
+
 	peer := NewTCPPeer(conn, true)
 
-	if err := t.handshakeFunc(peer); err != nil {
-		fmt.Println("TCPTransport handshake error: ", err)
+	if err = t.HandshakeFunc(peer); err != nil {
 		return
 	}
 
-	// 循环读取数据
-	msg := &Temp{}
-	for {
-		if err := t.decoder.Decode(peer.conn, msg); err != nil {
-			fmt.Println("TCPTransport decode error: ", err)
-			continue
+	if t.OnPeer != nil {
+		if err = t.OnPeer(peer); err != nil {
+			return
 		}
+	}
+
+	// 循环读取数据
+	rpc := RPC{}
+	//buf := make([]byte, 1024)
+	for {
+		err = t.Decoder.Decode(peer.conn, &rpc)
+
+		if err != nil {
+			fmt.Println("TCPTransport read error: ", err)
+			return
+		}
+
+		rpc.From = conn.RemoteAddr()
+		t.rpcChan <- rpc
+		fmt.Printf("receive message: %+v\n", rpc)
 	}
 }
