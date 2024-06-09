@@ -95,6 +95,10 @@ func (s *Store) Has(key string) bool {
 	return !errors.Is(err, os.ErrNotExist)
 }
 
+func (s *Store) Clear() error {
+	return os.RemoveAll(s.Root)
+}
+
 // Delete 从磁盘上删除一个 key 对应的文件
 func (s *Store) Delete(key string) error {
 	pathKey := s.PathTransformFunc(key)
@@ -107,6 +111,10 @@ func (s *Store) Delete(key string) error {
 
 	// todo: 这种删除方式可能导致其他通过散列函数生成文件名前面的pad与想要删除的文件相同的文件被删除
 	return os.RemoveAll(firstPathNameWithRoot)
+}
+
+func (s *Store) Write(key string, r io.Reader) error {
+	return s.writeStream(key, r)
 }
 
 func (s *Store) Read(key string) (io.Reader, error) {

@@ -4,6 +4,7 @@ import (
 	"distributed-file-store/p2p"
 	"fmt"
 	"log"
+	"time"
 )
 
 func OnPeer(peer p2p.Peer) error {
@@ -14,23 +15,29 @@ func OnPeer(peer p2p.Peer) error {
 }
 
 func main() {
-	tcpOps := p2p.TCPTransportOpts{
+	tcpTransportOpts := p2p.TCPTransportOpts{
 		ListenAddr:    ":3000",
 		HandshakeFunc: p2p.NOPHandshakeFunc,
 		Decoder:       p2p.DefaultDecoder{},
-		OnPeer:        OnPeer,
+		// todo: OnPeer func
 	}
-	tr := p2p.NewTCPTransport(tcpOps)
-	if err := tr.ListenAndAccept(); err != nil {
-		log.Fatal(err)
+	tcpTransport := p2p.NewTCPTransport(tcpTransportOpts)
+
+	fileServerOpts := FileServerOpts{
+		StorageRoot:       "3000_network",
+		PathTransformFunc: CASPathTransformFunc,
+		Transport:         tcpTransport,
 	}
+
+	s := NewFileServer(fileServerOpts)
 
 	go func() {
-		for rpc := range tr.Consume() {
-			log.Printf("Received RPC: %+v\n", rpc)
-		}
+		time.Sleep(3 * time.Second)
+		s.Stop()
 	}()
 
-	ch := make(chan struct{})
-	<-ch
+	if err := s.Start(); err != nil {
+		log.Fatalln(err)
+	}
+
 }

@@ -1,7 +1,9 @@
 package p2p
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"net"
 )
 
@@ -52,6 +54,12 @@ func (t *TCPTransport) Consume() <-chan RPC {
 	return t.rpcChan
 }
 
+// Close 实现 Transport 的接口，关闭监听
+func (t *TCPTransport) Close() error {
+	return t.listener.Close()
+}
+
+// ListenAndAccept 实现 Transport 的接口，监听并接受连接
 func (t *TCPTransport) ListenAndAccept() (err error) {
 	t.listener, err = net.Listen("tcp", t.ListenAddr)
 	if err != nil {
@@ -60,12 +68,17 @@ func (t *TCPTransport) ListenAndAccept() (err error) {
 
 	go t.startAcceptLoop()
 
+	log.Printf("TCP transport listening on port: %s\n", t.ListenAddr)
+
 	return
 }
 
 func (t *TCPTransport) startAcceptLoop() {
 	for {
 		conn, err := t.listener.Accept()
+		if errors.Is(err, net.ErrClosed) {
+			return
+		}
 		if err != nil {
 			fmt.Println("TCPTransport accept error: ", err)
 			return

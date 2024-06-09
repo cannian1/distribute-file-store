@@ -11,58 +11,49 @@ import (
 func TestPathTransformFunc(t *testing.T) {
 	key := "momsbestrecipe"
 	pathKey := CASPathTransformFunc(key)
-	expectedOriginalKey := "9c6a869ebfa9c237594def249adac0b2c4582781"
+	expectedFilename := "9c6a869ebfa9c237594def249adac0b2c4582781"
 	expectedPathname := "9c6a8/69ebf/a9c23/7594d/ef249/adac0/b2c45/82781"
 	assert.Equal(t, pathKey.PathName, expectedPathname)
-	assert.Equal(t, pathKey.Filename, expectedOriginalKey)
+	assert.Equal(t, pathKey.Filename, expectedFilename)
 }
 
-func TestStoreDeleteKey(t *testing.T) {
+func TestStore(t *testing.T) {
+	s := newStore()
+	defer teardown(t, s)
+
+	for i := range 50 {
+		key := fmt.Sprintf("foo_%d", i)
+		data := []byte("some jpg bytes")
+		if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
+			t.Error(err)
+		}
+
+		r, err := s.Read(key)
+		if err != nil {
+			t.Error(err)
+		}
+
+		b, _ := io.ReadAll(r)
+
+		fmt.Println(string(b))
+
+		assert.Equal(t, string(b), string(data))
+		assert.Equal(t, s.Has(key), true)
+		assert.Equal(t, s.Delete(key), nil)
+	}
+
+}
+
+func newStore() *Store {
 	opts := StoreOpts{
 		PathTransformFunc: CASPathTransformFunc,
 	}
 
-	s := NewStore(opts)
-
-	key := "momsbestrecipe"
-	data := []byte("some jpg bytes")
-	if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
-		t.Error(err)
-	}
-
-	if err := s.Delete(key); err != nil {
-		t.Error(err)
-	}
-
-	if _, err := s.Read(key); err == nil {
-		t.Error(err)
-	}
+	return NewStore(opts)
 }
 
-func TestNewStore(t *testing.T) {
-	opts := StoreOpts{
-		PathTransformFunc: CASPathTransformFunc,
-	}
-
-	s := NewStore(opts)
-
-	key := "momsbestrecipe"
-	data := []byte("some jpg bytes")
-	if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
+func teardown(t *testing.T, s *Store) {
+	if err := s.Clear(); err != nil {
 		t.Error(err)
 	}
-
-	r, err := s.Read(key)
-	if err != nil {
-		t.Error(err)
-	}
-
-	b, _ := io.ReadAll(r)
-
-	fmt.Println(string(b))
-
-	assert.Equal(t, string(b), string(data))
-	assert.Equal(t, s.Has(key), true)
-
-	assert.Equal(t, s.Delete(key), nil)
 }
