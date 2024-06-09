@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+const defaultRootFoldName = "cannian1"
+
 // CASPathTransformFunc 是将一个 key 通过散列转化为一个路径的函数
 func CASPathTransformFunc(key string) PathKey {
 	hash := sha1.Sum([]byte(key)) // [20]byte -> []byte
@@ -54,6 +56,8 @@ func (p PathKey) FullPath() string {
 
 // StoreOpts 保存了一个 Store 的配置
 type StoreOpts struct {
+	// Root 是存储文件的根目录，包含系统所有的文件夹/文件
+	Root              string
 	PathTransformFunc PathTransformFunc
 }
 
@@ -69,18 +73,25 @@ type Store struct {
 	StoreOpts
 }
 
-func NewStore(opt StoreOpts) *Store {
-	if opt.PathTransformFunc == nil {
-		opt.PathTransformFunc = DefaultPathTransformFunc
+func NewStore(opts StoreOpts) *Store {
+	if opts.PathTransformFunc == nil {
+		opts.PathTransformFunc = DefaultPathTransformFunc
 	}
+
+	if len(opts.Root) == 0 {
+		opts.Root = defaultRootFoldName
+	}
+
 	return &Store{
-		StoreOpts: opt,
+		StoreOpts: opts,
 	}
 }
 
 func (s *Store) Has(key string) bool {
 	pathKey := s.PathTransformFunc(key)
-	_, err := os.Stat(pathKey.FullPath())
+	fullPathWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.FullPath())
+
+	_, err := os.Stat(fullPathWithRoot)
 	return !errors.Is(err, os.ErrNotExist)
 }
 
@@ -92,8 +103,10 @@ func (s *Store) Delete(key string) error {
 		log.Printf("deleted [%s] from disk\n", pathKey.FullPath())
 	}()
 
+	firstPathNameWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.FirstPathName())
+
 	// todo: 这种删除方式可能导致其他通过散列函数生成文件名前面的pad与想要删除的文件相同的文件被删除
-	return os.RemoveAll(pathKey.FirstPathName())
+	return os.RemoveAll(firstPathNameWithRoot)
 }
 
 func (s *Store) Read(key string) (io.Reader, error) {
@@ -111,21 +124,22 @@ func (s *Store) Read(key string) (io.Reader, error) {
 
 func (s *Store) readStream(key string) (io.ReadCloser, error) {
 	pathKey := s.PathTransformFunc(key)
-	return os.Open(pathKey.FullPath())
+	pathPathWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.FullPath())
+	return os.Open(pathPathWithRoot)
 }
 
 // writeStream 将一个流写入到磁盘上
 func (s *Store) writeStream(key string, r io.Reader) error {
 	pathKey := s.PathTransformFunc(key) // 通过传入的规则函数将 key 转化为路径
+	pathNameWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.PathName)
 
-	if err := os.MkdirAll(pathKey.PathName, os.ModePerm); err != nil {
+	if err := os.MkdirAll(pathNameWithRoot, os.ModePerm); err != nil {
 		return err
 	}
 
-	fullPath := pathKey.FullPath()
-	fmt.Println(fullPath)
+	fullPathWithRoot := fmt.Sprintf("%s/%s", s.Root, pathKey.FullPath())
 
-	f, err := os.Create(fullPath)
+	f, err := os.Create(fullPathWithRoot)
 	defer f.Close()
 	if err != nil {
 		return err
@@ -135,7 +149,7 @@ func (s *Store) writeStream(key string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("written (%d bytes) to dist:%s\n", n, fullPath)
+	log.Printf("written (%d bytes) to dist:%s\n", n, fullPathWithRoot)
 
 	return nil
 }

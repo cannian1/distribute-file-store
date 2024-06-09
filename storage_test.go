@@ -63,4 +63,6 @@ func TestNewStore(t *testing.T) {
 
 	assert.Equal(t, string(b), string(data))
 	assert.Equal(t, s.Has(key), true)
+
+	assert.Equal(t, s.Delete(key), nil)
 }
