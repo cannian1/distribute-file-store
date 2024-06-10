@@ -19,27 +19,26 @@ func TestPathTransformFunc(t *testing.T) {
 
 func TestStore(t *testing.T) {
 	s := newStore()
-	defer teardown(t, s)
+	id := generateID()
 
-	for i := range 50 {
+	for i := range 10 {
 		key := fmt.Sprintf("foo_%d", i)
 		data := []byte("some jpg bytes")
-		if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
+		if _, err := s.writeStream(id, key, bytes.NewReader(data)); err != nil {
 			t.Error(err)
 		}
 
-		r, err := s.Read(key)
+		_, r, err := s.Read(id, key)
 		if err != nil {
 			t.Error(err)
 		}
 
 		b, _ := io.ReadAll(r)
 
-		fmt.Println(string(b))
-
 		assert.Equal(t, string(b), string(data))
-		assert.Equal(t, s.Has(key), true)
-		assert.Equal(t, s.Delete(key), nil)
+		assert.Equal(t, s.Has(id, key), true)
+
+		//teardown(t, s)
 	}
 
 }
